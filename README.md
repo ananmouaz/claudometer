@@ -1,36 +1,59 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+<p align="center">
+  <img src="assets/logo.png" width="120" alt="Claudometer" />
+</p>
 
-## Getting Started
+<h1 align="center">Claudometer</h1>
 
-First, run the development server:
+<p align="center">
+  Your Claude usage limits, live in the macOS menu bar —
+  <br/>shown <b>exactly the way Claude shows them</b>.
+</p>
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+<p align="center">
+  <img src="screenshots/menubar.png" width="640" alt="Claudometer in the macOS menu bar" />
+</p>
+<p align="center">
+  <img src="screenshots/usage.png" width="340" alt="Claudometer usage popover" />
+</p>
+
+## Why Claudometer?
+
+- **Familiar by design.** It mirrors Claude's own *Settings → Usage* screen — the same session / weekly / per-model bars you already know. Nothing new to learn.
+- **At a glance.** A color-coded **% sits right in your menu bar** (green → amber → red as you approach the cap) so you stay mindful without clicking.
+- **Service status built in.** Live **Claude service status** pulled straight from [status.claude.com](https://status.claude.com) — incidents and degraded components included.
+- **Private.** Your session cookie stays on your machine. There's no backend, no account, no telemetry.
+
+## Install
+
+1. Download the latest **Claudometer.app** from [Releases](../../releases).
+2. Drag it to **/Applications** and open it. It lives in your menu bar (no dock icon).
+3. Click the menu-bar icon → follow the one-time setup to paste your claude.ai cookie. The app guides you with live ✓/✗ checks so you know you copied the right thing.
+
+> Unsigned build — on first open, right-click the app → **Open** to get past Gatekeeper.
+
+## How it works
+
+Claudometer reads the **same usage API the Claude website uses**, authenticated with your own `claude.ai` session cookie. A tiny local server relays the request (the browser can't send the cookie cross-origin) and adds your browser's User-Agent so Cloudflare's `cf_clearance` validates. The cookie is stored only in the app and sent **directly to claude.ai** — never to any third party.
+
+```
+your cookie ─▶ local relay ─▶ claude.ai /api/organizations/{org}/usage   (session / weekly / per-model)
+                           └▶ status.claude.com                          (service status)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Build from source
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run dev    # preview in a browser at http://localhost:3000
+npm run dist   # build Claudometer.app into ./release
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Built with Next.js + Electron.
 
-## Learn More
+## Privacy
 
-To learn more about Next.js, take a look at the following resources:
+The only credential is your `claude.ai` cookie. It's kept in the app's local storage, sent only to `claude.ai` to read your usage, and never persisted on a server. The code is open — verify it yourself.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+<sub>Not affiliated with or endorsed by Anthropic. "Claude" is a trademark of Anthropic. · MIT License</sub>

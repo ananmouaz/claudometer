@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Electron main/preload run in Node (CommonJS), not the Next/browser env.
+    "electron/**",
+    // Build artifacts — packaged app, bundled deps, standalone server.
+    "release/**",
   ]),
 ]);
 

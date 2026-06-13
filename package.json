@@ -2,11 +2,34 @@
   "name": "claude-usage",
   "version": "0.1.0",
   "private": true,
+  "main": "electron/main.js",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "app": "next build && electron .",
+    "app:dev": "ELECTRON_START_URL=http://localhost:3000 electron .",
+    "prepare:standalone": "rm -rf .next/standalone/public .next/standalone/.next/static && cp -r public .next/standalone/public && cp -r .next/static .next/standalone/.next/static",
+    "dist": "next build && npm run prepare:standalone && electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.mouaz.claudometer",
+    "productName": "Claudometer",
+    "directories": { "output": "release" },
+    "afterPack": "./electron/after-pack.js",
+    "asar": true,
+    "files": ["electron/**/*", "package.json"],
+    "extraResources": [
+      { "from": ".next/standalone", "to": "app-server", "filter": ["**/*"] }
+    ],
+    "mac": {
+      "target": "dir",
+      "icon": "build/icon.png",
+      "category": "public.app-category.developer-tools",
+      "identity": null,
+      "extendInfo": { "LSUIElement": true }
+    }
   },
   "dependencies": {
     "next": "16.2.9",
@@ -18,6 +41,8 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "electron": "^42.4.0",
+    "electron-builder": "^26.15.3",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "tailwindcss": "^4",
