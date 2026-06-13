@@ -25,11 +25,15 @@
 
 ## Install
 
-1. Download the latest **Claudometer.app** from [Releases](../../releases).
-2. Drag it to **/Applications** and open it. It lives in your menu bar (no dock icon).
+1. From [Releases](../../releases), download the DMG for your Mac — `…-arm64.dmg` for **Apple Silicon** (M-series) or `…-x64.dmg` for **Intel**. *(Apple menu → About This Mac to check.)*
+2. Open the DMG and drag **Claudometer** to **/Applications**, then launch it. It lives in your menu bar (no dock icon).
 3. Click the menu-bar icon → follow the one-time setup to paste your claude.ai cookie. The app guides you with live ✓/✗ checks so you know you copied the right thing.
 
-> Unsigned build — on first open, right-click the app → **Open** to get past Gatekeeper.
+> **Unsigned build.** macOS blocks the first launch (*"Apple could not verify…"*). To open it, either:
+> - go to **System Settings → Privacy & Security**, then click **"Open Anyway"** (it appears right after you try to open the app), then reopen it — **or**
+> - run once in Terminal: `xattr -dr com.apple.quarantine "/Applications/Claudometer.app"`
+>
+> *(On macOS 14 and earlier you could right-click → Open; that no longer works on macOS 15+.)*
 
 ## How it works
 

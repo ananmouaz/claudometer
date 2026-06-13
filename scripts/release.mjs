@@ -40,9 +40,11 @@ const notes = `Claudometer ${version} — your Claude usage limits in the macOS 
 2. It lives in your menu bar (no dock icon). Click the icon and follow the one-time setup to paste your claude.ai cookie — the app guides you with live ✓/✗ checks.
 
 ### First launch (unsigned build)
-This build isn't code-signed, so macOS Gatekeeper warns on first open. Either:
-- **Right-click the app → Open → Open**, or
-- run \`xattr -cr "/Applications/Claudometer.app"\` once.
+This build isn't code-signed, so macOS blocks the first launch (*"Apple could not verify…"*). Open it one of two ways:
+- **System Settings → Privacy & Security → "Open Anyway"** (it appears right after you try to open the app), then reopen it — or
+- run once in Terminal: \`xattr -dr com.apple.quarantine "/Applications/Claudometer.app"\`
+
+*(On macOS 14 and earlier you could right-click → Open; that no longer works on macOS 15+.)*
 
 ### Notes
 - Not sure which Mac you have? Apple menu → About This Mac. "Apple M…" = Apple Silicon; "Intel" = Intel.
