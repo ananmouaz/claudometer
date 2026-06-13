@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Electron main/preload run in Node (CommonJS), not the Next/browser env.
     "electron/**",
+    // Node tooling scripts (release automation).
+    "scripts/**",
     // Build artifacts — packaged app, bundled deps, standalone server.
     "release/**",
   ]),

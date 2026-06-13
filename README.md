@@ -44,8 +44,9 @@ your cookie ─▶ local relay ─▶ claude.ai /api/organizations/{org}/usage  
 
 ```bash
 npm install
-npm run dev    # preview in a browser at http://localhost:3000
-npm run dist   # build Claudometer.app into ./release
+npm run dev      # preview in a browser at http://localhost:3000
+npm run dist     # build Claudometer.app (host arch) into ./release
+npm run release  # build arm64 + x64 DMGs and publish a GitHub release (maintainers)
 ```
 
 Built with Next.js + Electron.

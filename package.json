@@ -11,20 +11,23 @@
     "app": "next build && electron .",
     "app:dev": "ELECTRON_START_URL=http://localhost:3000 electron .",
     "prepare:standalone": "rm -rf .next/standalone/public .next/standalone/.next/static && cp -r public .next/standalone/public && cp -r .next/static .next/standalone/.next/static",
-    "dist": "next build && npm run prepare:standalone && electron-builder --mac"
+    "dist": "next build && npm run prepare:standalone && electron-builder --mac",
+    "pack:all": "next build && npm run prepare:standalone && electron-builder --mac --arm64 --x64",
+    "release": "node scripts/release.mjs"
   },
   "build": {
     "appId": "com.mouaz.claudometer",
     "productName": "Claudometer",
     "directories": { "output": "release" },
     "afterPack": "./electron/after-pack.js",
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
     "asar": true,
     "files": ["electron/**/*", "package.json"],
     "extraResources": [
       { "from": ".next/standalone", "to": "app-server", "filter": ["**/*"] }
     ],
     "mac": {
-      "target": "dir",
+      "target": ["dmg", "dir"],
       "icon": "build/icon.png",
       "category": "public.app-category.developer-tools",
       "identity": null,
