@@ -70,36 +70,66 @@ export function UsagePanel() {
   const [showSetup, setShowSetup] = useState(false);
   const [, setTick] = useState(0); // forces relative-time labels to refresh
 
-  const load = useCallback(async (c: string, orgUuid?: string) => {
-    setLoading(true);
-    setError(null);
-    setDetail(null);
-    try {
+  const load = useCallback(
+    async (c: string, orgUuid?: string, opts?: { background?: boolean }) => {
+      const background = opts?.background ?? false;
+      setLoading(true);
+      // Keep any existing banner during a silent background refresh; a clean
+      // run below clears it. Foreground loads reset it up front.
+      if (!background) {
+        setError(null);
+        setDetail(null);
+      }
       // Cloudflare's cf_clearance is bound to the UA that solved its challenge.
       // Prefer the user-saved browser UA; fall back to this runtime's UA.
       const ua = localStorage.getItem(UA_KEY) || navigator.userAgent;
-      const res = await fetch("/api/usage", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ cookie: c, userAgent: ua, orgUuid }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        setError(body?.error ?? "Something went wrong.");
-        setDetail(body?.detail || null);
-        if (body?.auth) setShowSetup(true);
-        return;
+      const reqBody = JSON.stringify({ cookie: c, userAgent: ua, orgUuid });
+
+      // Retry transient failures reaching our own local proxy before surfacing
+      // them: first launch can race the standalone server's boot, and the
+      // menu-bar app briefly loses localhost on sleep/wake. Both self-heal in
+      // under a second. An HTTP error (4xx/5xx) is a real answer — don't retry.
+      const MAX_TRIES = 3;
+      try {
+        for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
+          try {
+            const res = await fetch("/api/usage", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: reqBody,
+            });
+            const body = await res.json();
+            if (!res.ok) {
+              setError(body?.error ?? "Something went wrong.");
+              setDetail(body?.detail || null);
+              if (body?.auth) setShowSetup(true);
+              return;
+            }
+            const payload = body as UsagePayload;
+            setData(payload);
+            setError(null);
+            setDetail(null);
+            // Mirror the session % onto the macOS menu bar (tinted by danger) in Electron.
+            updateTray(clampPct(payload.usage.five_hour?.utilization));
+            return;
+          } catch {
+            if (attempt < MAX_TRIES) {
+              await new Promise((r) => setTimeout(r, attempt * 400));
+              continue;
+            }
+            // Retries exhausted. Don't clobber a good screen mid-background
+            // refresh — keep the last data and try again next cycle.
+            if (!background) {
+              setError("Network error — couldn't reach the server.");
+            }
+          }
+        }
+      } finally {
+        setLoading(false);
       }
-      const payload = body as UsagePayload;
-      setData(payload);
-      // Mirror the session % onto the macOS menu bar (tinted by danger) in Electron.
-      updateTray(clampPct(payload.usage.five_hour?.utilization));
-    } catch {
-      setError("Network error — couldn't reach the server.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
   // Restore a saved cookie and fetch on first mount. The reads live in a nested
   // async fn so we're syncing from an external system (localStorage), not
@@ -136,7 +166,7 @@ export function UsagePanel() {
     const refresh = () => {
       if (document.visibilityState !== "visible") return;
       const { cookie, orgUuid, loading } = live.current;
-      if (cookie && !loading) load(cookie, orgUuid);
+      if (cookie && !loading) load(cookie, orgUuid, { background: true });
     };
     const id = setInterval(refresh, 60_000);
     document.addEventListener("visibilitychange", refresh);

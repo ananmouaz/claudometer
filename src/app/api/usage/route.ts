@@ -34,6 +34,23 @@ function claudeHeaders(cookie: string, userAgent: string): HeadersInit {
   };
 }
 
+// claude.ai (and its Cloudflare edge) occasionally stalls. Cap each upstream
+// request so a hung connection surfaces as a clean error instead of leaving
+// the proxy — and the client waiting on it — hanging until the platform gives up.
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  ms = 15_000,
+): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -112,7 +129,7 @@ export async function POST(req: Request): Promise<Response> {
   // 1) List organizations.
   let orgRes: Response;
   try {
-    orgRes = await fetch(`${CLAUDE}/api/organizations`, { headers, cache: "no-store" });
+    orgRes = await fetchWithTimeout(`${CLAUDE}/api/organizations`, { headers, cache: "no-store" });
   } catch {
     return json({ error: "Couldn't reach claude.ai. Check your connection." }, 502);
   }
@@ -184,7 +201,7 @@ async function fetchUsage(
   headers: HeadersInit,
 ): Promise<{ status: number; usage: RawUsage }> {
   try {
-    const res = await fetch(`${CLAUDE}/api/organizations/${uuid}/usage`, {
+    const res = await fetchWithTimeout(`${CLAUDE}/api/organizations/${uuid}/usage`, {
       headers,
       cache: "no-store",
     });
@@ -205,7 +222,7 @@ type SummaryJson = {
 
 async function fetchStatus(): Promise<StatusInfo | null> {
   try {
-    const res = await fetch(STATUS_URL, { cache: "no-store" });
+    const res = await fetchWithTimeout(STATUS_URL, { cache: "no-store" });
     if (!res.ok) return null;
     const data = (await res.json()) as SummaryJson;
     const rollup = data.status ?? null;
