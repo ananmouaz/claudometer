@@ -1,6 +1,6 @@
 {
   "name": "claude-usage",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "main": "electron/main.js",
   "scripts": {
@@ -18,20 +18,36 @@
   "build": {
     "appId": "com.mouaz.claudometer",
     "productName": "Claudometer",
-    "directories": { "output": "release" },
+    "directories": {
+      "output": "release"
+    },
     "afterPack": "./electron/after-pack.js",
     "artifactName": "${productName}-${version}-${arch}.${ext}",
     "asar": true,
-    "files": ["electron/**/*", "package.json"],
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
     "extraResources": [
-      { "from": ".next/standalone", "to": "app-server", "filter": ["**/*"] }
+      {
+        "from": ".next/standalone",
+        "to": "app-server",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "mac": {
-      "target": ["dmg", "dir"],
+      "target": [
+        "dmg",
+        "dir"
+      ],
       "icon": "build/icon.png",
       "category": "public.app-category.developer-tools",
       "identity": null,
-      "extendInfo": { "LSUIElement": true }
+      "extendInfo": {
+        "LSUIElement": true
+      }
     }
   },
   "dependencies": {
