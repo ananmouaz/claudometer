@@ -160,19 +160,24 @@ export function UsagePanel() {
     live.current = { cookie, orgUuid: data?.org.uuid, loading };
   });
 
-  // Auto-refresh every 60s, but only while visible (popover open / tab focused),
-  // and refresh immediately when it becomes visible again.
+  // Auto-refresh every 60s — even while the popover is hidden, so the menu-bar
+  // glyph and % stay current (that's the whole point of a menu-bar meter).
+  // Relies on the Electron window disabling backgroundThrottling, otherwise
+  // Chromium freezes this timer once the window is hidden. Also refresh the
+  // instant the popover is reopened, so it's never stale on open.
   useEffect(() => {
     const refresh = () => {
-      if (document.visibilityState !== "visible") return;
       const { cookie, orgUuid, loading } = live.current;
       if (cookie && !loading) load(cookie, orgUuid, { background: true });
     };
     const id = setInterval(refresh, 60_000);
-    document.addEventListener("visibilitychange", refresh);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       clearInterval(id);
-      document.removeEventListener("visibilitychange", refresh);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [load]);
 

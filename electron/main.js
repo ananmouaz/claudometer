@@ -90,6 +90,11 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // The popover is hidden most of the time, but it owns the 60s refresh
+      // that keeps the tray glyph/% current. Without this, Chromium throttles
+      // (and eventually freezes) the timer while hidden, so the menu bar goes
+      // stale until you reopen the popover.
+      backgroundThrottling: false,
     },
   });
 
