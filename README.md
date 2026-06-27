@@ -10,6 +10,10 @@
 </p>
 
 <p align="center">
+  <a href="https://ko-fi.com/ananmouaz"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-ko--fi-FF5E5B?logo=ko-fi&logoColor=white" alt="Buy me a coffee on Ko-fi" /></a>
+</p>
+
+<p align="center">
   <img src="screenshots/menubar.png" width="640" alt="Claudometer in the macOS menu bar" />
 </p>
 <p align="center">
@@ -58,6 +62,10 @@ Built with Next.js + Electron.
 ## Privacy
 
 The only credential is your `claude.ai` cookie. It's kept in the app's local storage, sent only to `claude.ai` to read your usage, and never persisted on a server. The code is open — verify it yourself.
+
+## Support
+
+If Claudometer is useful to you, you can [buy me a coffee ☕](https://ko-fi.com/ananmouaz).
 
 ---
 
