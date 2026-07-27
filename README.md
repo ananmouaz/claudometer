@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://ko-fi.com/ananmouaz"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-ko--fi-FF5E5B?logo=ko-fi&logoColor=white" alt="Buy me a coffee on Ko-fi" /></a>
+  <a href="https://ko-fi.com/ananmouaz"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Buy me a coffee on Ko-fi" height="48" /></a>
 </p>
 
 <p align="center">
@@ -65,7 +65,11 @@ The only credential is your `claude.ai` cookie. It's kept in the app's local sto
 
 ## Support
 
-If Claudometer is useful to you, you can [buy me a coffee ☕](https://ko-fi.com/ananmouaz).
+If Claudometer is useful to you, buy me a coffee ☕
+
+<p align="center">
+  <a href="https://ko-fi.com/ananmouaz"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Buy me a coffee on Ko-fi" height="48" /></a>
+</p>
 
 ---
 
