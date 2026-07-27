@@ -56,6 +56,15 @@ npm run release  # build both arches + create/update the v<version> GitHub relea
   serve as the fallback when a response has no `limits`. Responses also carry
   unrelated null keys (`tangelo`, `seven_day_omelette`, …) — don't pattern-match
   bucket names.
+- **Bar color comes from the API's `severity`**, not our own thresholds; the
+  60/85 percentage rule is only the fallback for responses with no `limits`.
+  `is_active` marks the limit currently binding the account — that's what drives
+  the red "You've hit your X limit" banner. Don't reintroduce hardcoded tiers.
+- **Extra usage / credits**: `spend` (money in minor units — `amount_minor /
+  10**exponent`) plus the older `extra_usage` block. `spendView()` returns null
+  for accounts that never enabled credits so subscriptions don't get an empty
+  section. `extra_usage.daily` / `.weekly` are typed `unknown` — only ever seen
+  null, so don't render them until the shape is confirmed.
 - **Service status**: from `status.claude.com/api/v2/summary.json`. Color comes from
   the **incident's `impact`** or the worst **component status** — NOT the page
   rollup (the rollup can read "none/green" during a minor incident). The circle dot

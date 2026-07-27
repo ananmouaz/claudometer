@@ -4,11 +4,22 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import type { Bucket, StatusInfo, UsagePayload } from "@/lib/types";
 import {
   clampPct,
+  formatDollars,
+  formatMoney,
   formatRelative,
   formatSessionReset,
   formatWeeklyReset,
+  splitMarkdownLink,
 } from "@/lib/format";
-import { sessionBucket, weeklyRows } from "@/lib/usage";
+import {
+  moneyValue,
+  reachedLimits,
+  sessionRow,
+  spendView,
+  weeklyRows,
+  type SpendView,
+  type UsageRow,
+} from "@/lib/usage";
 
 const APP_NAME = "Claudometer";
 const STORAGE_KEY = "claude_usage_cookie";
@@ -103,7 +114,7 @@ export function UsagePanel() {
             setError(null);
             setDetail(null);
             // Mirror the session % onto the macOS menu bar (tinted by danger) in Electron.
-            updateTray(clampPct(sessionBucket(payload.usage)?.utilization));
+            updateTray(clampPct(sessionRow(payload.usage)?.bucket.utilization));
             return;
           } catch {
             if (attempt < MAX_TRIES) {
@@ -197,7 +208,9 @@ export function UsagePanel() {
     setShowSetup(true);
   }
 
-  const session = data ? sessionBucket(data.usage) : null;
+  const sessionInfo = data ? sessionRow(data.usage) : null;
+  const session = sessionInfo?.bucket ?? null;
+  const sessionSeverity = sessionInfo?.severity ?? null;
 
   return (
     <div className="w-full max-w-xl rounded-2xl border border-edge bg-panel shadow-2xl shadow-black/40">
@@ -251,10 +264,13 @@ export function UsagePanel() {
         {/* Usage body */}
         {data ? (
           <>
+            <ReachedLimits rows={reachedLimits(data.usage)} />
+
             <LimitRow
               label="Current session"
               subtitle={formatSessionReset(session?.resets_at ?? null)}
               bucket={session}
+              severity={sessionSeverity}
             />
 
             <div className="flex flex-col gap-5">
@@ -271,10 +287,13 @@ export function UsagePanel() {
                     label={row.label}
                     subtitle={subtitle}
                     bucket={row.bucket}
+                    severity={row.severity}
                   />
                 );
               })}
             </div>
+
+            <ExtraUsage spend={spendView(data.usage)} />
 
             {/* Last updated + refresh */}
             <div className="flex items-center gap-2 text-sm text-muted">
@@ -326,31 +345,138 @@ export function UsagePanel() {
   );
 }
 
+/**
+ * Bar tint. claude.ai now sends its own `severity` per limit, so trust that over
+ * our thresholds — it knows about caps we can't see. The percentage fallback is
+ * for legacy responses that carry no `limits` array.
+ */
+function barColor(severity: string | null, pct: number): string {
+  switch (severity) {
+    case "critical":
+      return "var(--bad)";
+    case "warning":
+    case "warn":
+      return "var(--warn)";
+    case "normal":
+      return "var(--fill)";
+    default:
+      return pct >= 85 ? "var(--bad)" : pct >= 60 ? "var(--warn)" : "var(--fill)";
+  }
+}
+
+/** "$3.20 of $10.00" when the account is dollar-metered, else "". */
+function dollarLine(bucket: Bucket | null): string {
+  if (!bucket || typeof bucket.limit_dollars !== "number") return "";
+  const used = typeof bucket.used_dollars === "number" ? bucket.used_dollars : 0;
+  return `${formatDollars(used)} of ${formatDollars(bucket.limit_dollars)}`;
+}
+
 function LimitRow({
   label,
   subtitle,
   bucket,
+  severity = null,
 }: {
   label: string;
   subtitle: string;
   bucket: Bucket | null;
+  severity?: string | null;
 }) {
   const pct = clampPct(bucket?.utilization);
+  const dollars = dollarLine(bucket);
   return (
     <div className="flex items-center gap-4">
       <div className="w-40 shrink-0">
         <div className="text-[15px] font-medium text-ink">{label}</div>
         {subtitle && <div className="mt-0.5 text-sm text-muted">{subtitle}</div>}
+        {dollars && <div className="mt-0.5 text-sm text-muted">{dollars}</div>}
       </div>
       <div className="flex-1">
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-bar">
           <div
-            className="h-full rounded-full bg-fill transition-[width] duration-500 ease-out"
-            style={{ width: `${pct}%` }}
+            className="h-full rounded-full transition-[width] duration-500 ease-out"
+            style={{ width: `${pct}%`, background: barColor(severity, pct) }}
           />
         </div>
       </div>
       <div className="w-16 shrink-0 text-right text-sm text-muted">{pct}% used</div>
+    </div>
+  );
+}
+
+/** Banner for limits claude.ai says are spent — the actionable bit up top. */
+function ReachedLimits({ rows }: { rows: UsageRow[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="rounded-lg border border-[#5c3631] bg-[#3a221f] px-3.5 py-2.5 text-sm text-[#f0b3a8]">
+      {rows.map((row) => {
+        const what = row.model ?? row.label.replace(/ only$/, "");
+        const reset = formatWeeklyReset(row.bucket.resets_at) || "shortly";
+        return (
+          <div key={row.key}>
+            {`You've hit your ${what} limit — ${reset.replace(/^Resets/, "resets")}`}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Pay-as-you-go credits, mirroring the extra-usage block on claude.ai. */
+function ExtraUsage({ spend }: { spend: SpendView | null }) {
+  if (!spend) return null;
+
+  const currency = spend.used?.currency ?? spend.cap?.currency ?? "USD";
+  const used = spend.used ? moneyValue(spend.used) : 0;
+  const cap = spend.cap ? moneyValue(spend.cap) : 0;
+  const pct = clampPct(spend.percent);
+  const disclaimer = spend.disclaimer ? splitMarkdownLink(spend.disclaimer) : null;
+
+  return (
+    <div className="flex flex-col gap-2.5 border-t border-edge pt-4">
+      <h2 className="text-base font-semibold text-ink">Extra usage</h2>
+
+      {cap > 0 ? (
+        <LimitRow
+          label="Credits spent"
+          subtitle={`${formatMoney(used, currency)} of ${formatMoney(cap, currency)}`}
+          bucket={{ utilization: pct, resets_at: null }}
+          severity={spend.severity}
+        />
+      ) : (
+        <div className="text-sm text-muted">
+          {`${formatMoney(used, currency)} spent · no spend limit set`}
+        </div>
+      )}
+
+      {spend.limitReached && (
+        <div className="text-sm text-[#f0b3a8]">
+          Spend limit reached — extra usage is paused.
+        </div>
+      )}
+      {spend.disabledReason && (
+        <div className="text-sm text-muted">{spend.disabledReason}</div>
+      )}
+      {!spend.canPurchase && !spend.disabledReason && (
+        <div className="text-sm text-muted">
+          Buying more credits isn&apos;t available on this account.
+        </div>
+      )}
+
+      {disclaimer && (
+        <div className="text-sm text-muted">
+          {disclaimer.before}
+          <a
+            href={disclaimer.href}
+            target="_blank"
+            rel="noreferrer"
+            className="underline hover:text-ink"
+          >
+            {disclaimer.text}
+          </a>
+          {disclaimer.after}
+        </div>
+      )}
     </div>
   );
 }

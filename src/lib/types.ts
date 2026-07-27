@@ -2,6 +2,11 @@
 export type Bucket = {
   utilization: number; // 0–100 integer
   resets_at: string | null; // ISO-8601, or null when nothing has been used
+  // Only populated on dollar-metered accounts (null on subscription plans), and
+  // only on the legacy top-level buckets — `limits` entries carry no dollars.
+  limit_dollars?: number | null;
+  used_dollars?: number | null;
+  remaining_dollars?: number | null;
 };
 
 /**
@@ -25,9 +30,54 @@ export type LimitEntry = {
   is_active?: boolean;
 };
 
+/** An amount of money in minor units — `amount_minor / 10 ** exponent`. */
+export type Money = {
+  amount_minor: number;
+  currency: string; // ISO-4217, e.g. "EUR"
+  exponent: number;
+};
+
+/** The pay-as-you-go side of the usage page: credits spent against a cap. */
+export type SpendInfo = {
+  used?: Money | null;
+  limit?: Money | null;
+  percent?: number;
+  severity?: string;
+  enabled?: boolean;
+  disabled_reason?: string | null;
+  cap?: { money?: Money | null; credits?: number | null } | null;
+  balance?: number | null;
+  can_purchase_credits?: boolean;
+  can_toggle?: boolean;
+  /** Markdown — contains a single `[text](url)` link. */
+  disclaimer?: string | null;
+};
+
+/**
+ * The older credits block, still returned alongside `spend`. `daily` / `weekly`
+ * are left `unknown` — they've only ever been observed null, so their shape is
+ * unconfirmed and rendering them would be a guess.
+ */
+export type ExtraUsage = {
+  is_enabled?: boolean;
+  monthly_limit?: number;
+  used_credits?: number;
+  utilization?: number | null;
+  currency?: string;
+  decimal_places?: number;
+  disabled_reason?: string | null;
+  user_disabled?: boolean;
+  spend_limit_reached?: boolean;
+  credits_ever_enabled?: boolean;
+  daily?: unknown;
+  weekly?: unknown;
+};
+
 /** Raw shape of GET /api/organizations/{org}/usage (only the keys we render). */
 export type RawUsage = {
   limits?: LimitEntry[] | null;
+  spend?: SpendInfo | null;
+  extra_usage?: ExtraUsage | null;
   // Legacy top-level buckets, kept as a fallback for accounts/responses that
   // predate `limits`. Per-model ones are dead on current responses.
   five_hour?: Bucket | null;
