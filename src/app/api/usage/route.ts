@@ -1,4 +1,5 @@
 import type { OrgInfo, OrgSummary, RawUsage, StatusInfo, UsagePayload } from "@/lib/types";
+import { sessionBucket, weeklyAllBucket, weeklyRows } from "@/lib/usage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -97,12 +98,14 @@ const pct = (n: unknown): number =>
 
 /** Higher = more active. Any live reset window dominates; ties break on % used. */
 function activityScore(u: RawUsage): number {
-  const active = (u.five_hour?.resets_at ? 1 : 0) + (u.seven_day?.resets_at ? 1 : 0);
-  const used =
-    pct(u.five_hour?.utilization) +
-    pct(u.seven_day?.utilization) +
-    pct(u.seven_day_opus?.utilization) +
-    pct(u.seven_day_sonnet?.utilization);
+  const session = sessionBucket(u);
+  const weekly = weeklyRows(u);
+  const active =
+    (session?.resets_at ? 1 : 0) + (weekly.some((r) => r.bucket.resets_at) ? 1 : 0);
+  const used = weekly.reduce(
+    (sum, r) => sum + pct(r.bucket.utilization),
+    pct(session?.utilization),
+  );
   return active * 1000 + used;
 }
 
@@ -172,8 +175,8 @@ export async function POST(req: Request): Promise<Response> {
 
   const summaries: OrgSummary[] = orgs.map((o, i) => ({
     ...o,
-    session: pct(usages[i].usage.five_hour?.utilization),
-    weekly: pct(usages[i].usage.seven_day?.utilization),
+    session: pct(sessionBucket(usages[i].usage)?.utilization),
+    weekly: pct(weeklyAllBucket(usages[i].usage)?.utilization),
   }));
 
   // Pick the requested org, else the most active one.

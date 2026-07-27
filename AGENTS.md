@@ -45,8 +45,17 @@ npm run release  # build both arches + create/update the v<version> GitHub relea
   **auto-select the most active org** (live reset window + highest utilization).
   The user may have multiple orgs; picking the first is wrong (an empty personal
   org reads 0%). UI exposes an org switcher when >1.
-- **Usage buckets**: `five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`,
-  each `{ utilization (0–100), resets_at }`.
+- **Usage buckets**: read them through `src/lib/usage.ts`, never off the raw JSON.
+  The endpoint's authoritative source is now the **`limits` array** — entries of
+  `{ kind, group, percent, severity, resets_at, scope, is_active }` with
+  `kind` ∈ `session` / `weekly_all` / `weekly_scoped`. Per-model limits only appear
+  as `weekly_scoped` + `scope.model.display_name` (e.g. `"Fable"`), and the legacy
+  top-level `seven_day_opus` / `seven_day_sonnet` keys now come back **`null` even
+  when that model's limit is at 100%** — don't render from them. The old
+  `five_hour` / `seven_day` `{ utilization, resets_at }` buckets still populate and
+  serve as the fallback when a response has no `limits`. Responses also carry
+  unrelated null keys (`tangelo`, `seven_day_omelette`, …) — don't pattern-match
+  bucket names.
 - **Service status**: from `status.claude.com/api/v2/summary.json`. Color comes from
   the **incident's `impact`** or the worst **component status** — NOT the page
   rollup (the rollup can read "none/green" during a minor incident). The circle dot

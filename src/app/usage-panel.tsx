@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import type { Bucket, RawUsage, StatusInfo, UsagePayload } from "@/lib/types";
+import type { Bucket, StatusInfo, UsagePayload } from "@/lib/types";
 import {
   clampPct,
   formatRelative,
   formatSessionReset,
   formatWeeklyReset,
 } from "@/lib/format";
+import { sessionBucket, weeklyRows } from "@/lib/usage";
 
 const APP_NAME = "Claudometer";
 const STORAGE_KEY = "claude_usage_cookie";
@@ -50,14 +51,6 @@ function updateTray(sessionPct: number) {
   if (!window.electronAPI) return;
   window.electronAPI.setUsage(sessionPct, sparkleIconDataURL(dangerColor(sessionPct)));
 }
-
-type WeeklyRow = { key: keyof RawUsage; label: string; model?: string };
-
-const WEEKLY_ROWS: WeeklyRow[] = [
-  { key: "seven_day", label: "All models" },
-  { key: "seven_day_opus", label: "Opus only", model: "Opus" },
-  { key: "seven_day_sonnet", label: "Sonnet only", model: "Sonnet" },
-];
 
 export function UsagePanel() {
   const [cookie, setCookie] = useState<string | null>(null);
@@ -110,7 +103,7 @@ export function UsagePanel() {
             setError(null);
             setDetail(null);
             // Mirror the session % onto the macOS menu bar (tinted by danger) in Electron.
-            updateTray(clampPct(payload.usage.five_hour?.utilization));
+            updateTray(clampPct(sessionBucket(payload.usage)?.utilization));
             return;
           } catch {
             if (attempt < MAX_TRIES) {
@@ -204,7 +197,7 @@ export function UsagePanel() {
     setShowSetup(true);
   }
 
-  const session = data?.usage.five_hour ?? null;
+  const session = data ? sessionBucket(data.usage) : null;
 
   return (
     <div className="w-full max-w-xl rounded-2xl border border-edge bg-panel shadow-2xl shadow-black/40">
@@ -267,19 +260,17 @@ export function UsagePanel() {
             <div className="flex flex-col gap-5">
               <h2 className="text-base font-semibold text-ink">Weekly limits</h2>
 
-              {WEEKLY_ROWS.map((row) => {
-                const b = data.usage[row.key];
-                if (!b) return null;
+              {weeklyRows(data.usage).map((row) => {
                 const subtitle =
-                  row.model && clampPct(b.utilization) === 0
+                  row.model && clampPct(row.bucket.utilization) === 0
                     ? `You haven't used ${row.model} yet`
-                    : formatWeeklyReset(b.resets_at);
+                    : formatWeeklyReset(row.bucket.resets_at);
                 return (
                   <LimitRow
                     key={row.key}
                     label={row.label}
                     subtitle={subtitle}
-                    bucket={b}
+                    bucket={row.bucket}
                   />
                 );
               })}

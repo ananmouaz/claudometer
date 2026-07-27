@@ -4,8 +4,32 @@ export type Bucket = {
   resets_at: string | null; // ISO-8601, or null when nothing has been used
 };
 
+/**
+ * One row of the newer `limits` array claude.ai's usage endpoint returns. This
+ * is now the authoritative list: the old per-model `seven_day_opus` /
+ * `seven_day_sonnet` keys come back `null` even when a model limit is maxed,
+ * and new models (Fable) only ever appear here as a `weekly_scoped` entry.
+ * `kind` is left as a string — Anthropic adds new kinds without notice.
+ */
+export type LimitEntry = {
+  kind: string; // "session" | "weekly_all" | "weekly_scoped" | future kinds
+  group?: string; // "session" | "weekly"
+  percent?: number; // 0–100
+  severity?: string; // "normal" | "critical" | …
+  resets_at?: string | null;
+  scope?: {
+    model?: { id: string | null; display_name?: string | null } | null;
+    // Observed null so far; tolerate a bare string or an object either way.
+    surface?: { display_name?: string | null } | string | null;
+  } | null;
+  is_active?: boolean;
+};
+
 /** Raw shape of GET /api/organizations/{org}/usage (only the keys we render). */
 export type RawUsage = {
+  limits?: LimitEntry[] | null;
+  // Legacy top-level buckets, kept as a fallback for accounts/responses that
+  // predate `limits`. Per-model ones are dead on current responses.
   five_hour?: Bucket | null;
   seven_day?: Bucket | null;
   seven_day_opus?: Bucket | null;
