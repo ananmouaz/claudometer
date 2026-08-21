@@ -60,9 +60,11 @@ npm run release  # build both arches + create/update the v<version> GitHub relea
   (`CLAUDE_BRIDGE_PORT`/`_TOKEN`/`_FILE`) *and* written to `bridge.json` (mode
   0600) in `app.getPath("userData")`, because `npm run app:dev` attaches to an
   external `next dev` that never sees our env.
-  - `userData` differs by build: **dev = `claude-usage`** (package name),
-    **packaged = `Claudometer`** (productName). `src/lib/claude-transport.ts`
-    checks both, plus the env var. Adding a third location means updating it.
+  - `userData` is `claude-usage` in **both** dev and packaged builds: Electron
+    takes it from the package.json `name`, and `productName` lives under the
+    `build` key where `app.getName()` never sees it. Verified against a real DMG.
+    `src/lib/claude-transport.ts` also checks a `Claudometer` path in case
+    `productName` is ever hoisted to the top level — harmless either way.
 - **Sign-in success must be proven by an API 200, never by a cookie.** claude.ai
   sets a `sessionKey` cookie *partway through* the login flow, so treating its
   presence as success stores a session that answers
