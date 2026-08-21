@@ -30,6 +30,22 @@ export function formatWeeklyReset(resetsAt: string | null): string {
   return `Resets ${weekdayTime(d)}`;
 }
 
+/**
+ * "Resets Aug 22, 2026 10:36 PM" — the absolute form chatgpt.com's Usage screen
+ * uses. Takes unix *seconds*, which is what OpenAI's `reset_at` is.
+ */
+export function formatUnixReset(unixSeconds: number | null): string {
+  if (typeof unixSeconds !== "number" || !Number.isFinite(unixSeconds)) return "";
+  const d = new Date(unixSeconds * 1000);
+  if (Number.isNaN(d.getTime())) return "";
+  const date = d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  return `Resets ${date} ${timeOnly(d)}`;
+}
+
 /** "less than a minute ago" / "3 min ago" / "2 hr ago". */
 export function formatRelative(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
