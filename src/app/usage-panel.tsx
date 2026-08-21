@@ -20,48 +20,12 @@ import {
   type SpendView,
   type UsageRow,
 } from "@/lib/usage";
+import { reportUsage } from "./tray-usage";
 
-const APP_NAME = "Claudometer";
 const STORAGE_KEY = "claude_usage_cookie";
 const UA_KEY = "claude_usage_ua";
 const CLAUDE_USAGE_URL = "https://claude.ai/settings/usage";
 const STATUS_PAGE_URL = "https://status.claude.com";
-
-declare global {
-  interface Window {
-    // Present only inside the Electron menu-bar shell (see electron/preload.js).
-    electronAPI?: { setUsage: (pct: number, iconDataURL?: string) => void };
-  }
-}
-
-// Danger tint for the menu-bar sparkle, matching the in-app status colors.
-function dangerColor(pct: number): string {
-  if (pct >= 85) return "#e8654f"; // red
-  if (pct >= 60) return "#f0b03a"; // amber
-  return "#43c478"; // green
-}
-
-// Draw the ✳ glyph (text presentation, so it takes our fill color) as a 36px
-// PNG = the @2x rep of an 18pt tray icon. No emoji container, fully tinted.
-function sparkleIconDataURL(color: string): string | undefined {
-  const px = 36;
-  const canvas = document.createElement("canvas");
-  canvas.width = px;
-  canvas.height = px;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return undefined;
-  ctx.fillStyle = color;
-  ctx.font = `${Math.round(px * 0.92)}px -apple-system, BlinkMacSystemFont, sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("✳︎", px / 2, px / 2 + 1);
-  return canvas.toDataURL("image/png");
-}
-
-function updateTray(sessionPct: number) {
-  if (!window.electronAPI) return;
-  window.electronAPI.setUsage(sessionPct, sparkleIconDataURL(dangerColor(sessionPct)));
-}
 
 export function UsagePanel() {
   const [cookie, setCookie] = useState<string | null>(null);
@@ -73,6 +37,12 @@ export function UsagePanel() {
   const [detail, setDetail] = useState<string | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   const [, setTick] = useState(0); // forces relative-time labels to refresh
+  // Automatic capture only exists inside the Electron shell; a plain browser
+  // has no cookie jar we can read, so there it stays false and the manual
+  // paste is the only path. Set from an effect — `window` isn't there on SSR.
+  const [canAutoCapture, setCanAutoCapture] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const [captureNote, setCaptureNote] = useState<string | null>(null);
 
   const load = useCallback(
     async (c: string, orgUuid?: string, opts?: { background?: boolean }) => {
@@ -106,7 +76,11 @@ export function UsagePanel() {
             if (!res.ok) {
               setError(body?.error ?? "Something went wrong.");
               setDetail(body?.detail || null);
-              if (body?.auth) setShowSetup(true);
+              // With one-click sign-in available, don't shove the paste helper
+              // open on a dead session — the button right below it is enough.
+              if (body?.auth && !window.electronAPI?.claudeSignIn) {
+                setShowSetup(true);
+              }
               return;
             }
             const payload = body as UsagePayload;
@@ -114,7 +88,7 @@ export function UsagePanel() {
             setError(null);
             setDetail(null);
             // Mirror the session % onto the macOS menu bar (tinted by danger) in Electron.
-            updateTray(clampPct(sessionRow(payload.usage)?.bucket.utilization));
+            reportUsage("claude", clampPct(sessionRow(payload.usage)?.bucket.utilization));
             return;
           } catch {
             if (attempt < MAX_TRIES) {
@@ -140,15 +114,19 @@ export function UsagePanel() {
   // setting state synchronously in the effect body.
   useEffect(() => {
     void (async () => {
+      const auto = !!window.electronAPI?.claudeSignIn;
+      setCanAutoCapture(auto);
       setUaDraft(localStorage.getItem(UA_KEY) || navigator.userAgent);
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         setCookie(saved);
         setDraft(saved);
-        await load(saved);
-      } else {
-        setShowSetup(true);
       }
+      // In the shell the bridge carries the session, so fetch regardless of
+      // whether a cookie was ever pasted. In the browser there's nothing to try
+      // without one, so open the paste helper instead.
+      if (auto || saved) await load(saved ?? "");
+      else setShowSetup(true);
     })();
   }, [load]);
 
@@ -159,9 +137,9 @@ export function UsagePanel() {
   }, []);
 
   // Latest values for the auto-refresh timer to read without stale closures.
-  const live = useRef({ cookie, orgUuid: data?.org.uuid, loading });
+  const live = useRef({ cookie, orgUuid: data?.org.uuid, loading, canAutoCapture });
   useEffect(() => {
-    live.current = { cookie, orgUuid: data?.org.uuid, loading };
+    live.current = { cookie, orgUuid: data?.org.uuid, loading, canAutoCapture };
   });
 
   // Auto-refresh every 60s — even while the popover is hidden, so the menu-bar
@@ -171,8 +149,12 @@ export function UsagePanel() {
   // instant the popover is reopened, so it's never stale on open.
   useEffect(() => {
     const refresh = () => {
-      const { cookie, orgUuid, loading } = live.current;
-      if (cookie && !loading) load(cookie, orgUuid, { background: true });
+      const { cookie, orgUuid, loading, canAutoCapture } = live.current;
+      // In the shell the bridge holds the session, so there's nothing to check
+      // for — only skip when neither a cookie nor a bridge is available.
+      if ((cookie || canAutoCapture) && !loading) {
+        load(cookie ?? "", orgUuid, { background: true });
+      }
     };
     const id = setInterval(refresh, 60_000);
     const onVisible = () => {
@@ -197,6 +179,36 @@ export function UsagePanel() {
     load(c);
   }
 
+  /**
+   * One-click connect: the shell opens claude.ai in-app and reports success only
+   * once the session actually answers an API call. Nothing is returned or stored
+   * here — the session lives in the shell and the proxy reads it through the
+   * Chromium bridge, so there's no cookie to manage at all.
+   */
+  async function signIn() {
+    const start = window.electronAPI?.claudeSignIn;
+    if (!start) return;
+    setCapturing(true);
+    setCaptureNote(null);
+    try {
+      const res = await start();
+      if (res.ok) {
+        setShowSetup(false);
+        await load(cookie ?? "");
+      } else if (res.reason === "cancelled") {
+        setCaptureNote("Sign-in window closed — not connected.");
+      } else if (res.reason === "in-progress") {
+        setCaptureNote("The sign-in window is already open.");
+      } else {
+        setCaptureNote("Sign-in timed out. Try again.");
+      }
+    } catch {
+      setCaptureNote("Couldn't open the sign-in window.");
+    } finally {
+      setCapturing(false);
+    }
+  }
+
   function clear() {
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(UA_KEY);
@@ -212,19 +224,11 @@ export function UsagePanel() {
   const session = sessionInfo?.bucket ?? null;
   const sessionSeverity = sessionInfo?.severity ?? null;
 
+  // The card frame and the brand bar belong to the tab shell (see shell.tsx);
+  // this renders only the Claude tab's contents.
   return (
-    <div className="w-full max-w-xl rounded-2xl border border-edge bg-panel shadow-2xl shadow-black/40">
-      <div className="flex flex-col gap-6 p-7">
-        {/* App brand bar */}
-        <div className="flex items-center gap-2.5 border-b border-edge pb-4">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icon.png" alt="" className="h-7 w-7 rounded-[7px]" />
-          <span className="text-base font-semibold tracking-tight text-ink">
-            {APP_NAME}
-          </span>
-        </div>
-
-        {/* Heading */}
+    <div className="flex flex-col gap-6 p-7">
+      {/* Heading */}
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <h1 className="text-lg font-semibold tracking-tight text-ink">
@@ -237,7 +241,7 @@ export function UsagePanel() {
           {data && data.orgs.length > 1 && (
             <select
               value={data.org.uuid}
-              onChange={(e) => cookie && load(cookie, e.target.value)}
+              onChange={(e) => load(cookie ?? "", e.target.value)}
               className="max-w-[55%] truncate rounded-lg border border-edge bg-panel-2 px-2.5 py-1.5 text-sm text-ink outline-none focus:border-fill"
               title="Switch organization"
             >
@@ -299,7 +303,7 @@ export function UsagePanel() {
             <div className="flex items-center gap-2 text-sm text-muted">
               <span>Last updated: {formatRelative(data.fetchedAt)}</span>
               <button
-                onClick={() => cookie && load(cookie, data.org.uuid)}
+                onClick={() => load(cookie ?? "", data.org.uuid)}
                 disabled={loading}
                 aria-label="Refresh"
                 className="rounded-md p-1 text-muted transition hover:bg-panel-2 hover:text-ink disabled:opacity-50"
@@ -314,32 +318,56 @@ export function UsagePanel() {
           <div className="text-sm text-muted">
             {loading
               ? "Loading your usage…"
-              : "Paste your claude.ai cookie below to see your usage."}
+              : canAutoCapture
+                ? "Sign in to Claude below to see your usage."
+                : "Paste your claude.ai cookie below to see your usage."}
           </div>
         )}
 
-        {/* Cookie controls */}
-        <div className="border-t border-edge pt-4">
-          <button
-            onClick={() => setShowSetup((s) => !s)}
-            className="text-sm text-muted transition hover:text-ink"
-          >
-            {showSetup ? "Hide cookie" : cookie ? "Show cookie" : "Set up cookie"}
-          </button>
+      {/* Connection controls */}
+      <div className="flex flex-col gap-2 border-t border-edge pt-4">
+        {canAutoCapture && (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={signIn}
+              disabled={capturing || loading}
+              className="rounded-lg bg-fill px-3.5 py-2 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50"
+            >
+              {capturing
+                ? "Waiting for sign-in…"
+                : cookie
+                  ? "Reconnect Claude account"
+                  : "Sign in to Claude"}
+            </button>
+            {captureNote && <span className="text-xs text-muted">{captureNote}</span>}
+          </div>
+        )}
 
-          {showSetup && (
-            <CookieSetup
-              draft={draft}
-              setDraft={setDraft}
-              uaDraft={uaDraft}
-              setUaDraft={setUaDraft}
-              onSave={save}
-              onClear={clear}
-              hasCookie={!!cookie}
-              saving={loading}
-            />
-          )}
-        </div>
+        <button
+          onClick={() => setShowSetup((s) => !s)}
+          className="self-start text-sm text-muted transition hover:text-ink"
+        >
+          {showSetup
+            ? "Hide cookie"
+            : canAutoCapture
+              ? "Paste a cookie manually instead"
+              : cookie
+                ? "Show cookie"
+                : "Set up cookie"}
+        </button>
+
+        {showSetup && (
+          <CookieSetup
+            draft={draft}
+            setDraft={setDraft}
+            uaDraft={uaDraft}
+            setUaDraft={setUaDraft}
+            onSave={save}
+            onClear={clear}
+            hasCookie={!!cookie}
+            saving={loading}
+          />
+        )}
       </div>
     </div>
   );

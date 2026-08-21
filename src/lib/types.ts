@@ -103,6 +103,12 @@ export type UsagePayload = {
   /** All orgs on the account, so the client can offer a switcher. */
   orgs: OrgSummary[];
   status: StatusInfo | null;
+  /**
+   * How the data was fetched: `bridge` = through the Electron shell's Chromium
+   * session (no cookie involved), `cookie` = a direct fetch forwarding a pasted
+   * cookie. The UI uses it to show the right connection controls.
+   */
+  via: "bridge" | "cookie";
   fetchedAt: string; // ISO-8601
 };
 

@@ -1,63 +1,11 @@
-import type { OrgInfo, OrgSummary, RawUsage, StatusInfo, UsagePayload } from "@/lib/types";
+import type { OrgInfo, OrgSummary, RawUsage, UsagePayload } from "@/lib/types";
+import { json } from "@/lib/http";
+import { CLAUDE_STATUS_URL, fetchStatus } from "@/lib/status";
+import { claudeTransport, type ClaudeTransport } from "@/lib/claude-transport";
 import { sessionBucket, weeklyAllBucket, weeklyRows } from "@/lib/usage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const CLAUDE = "https://claude.ai";
-// summary.json carries the same rollup as status.json PLUS per-component status,
-// active (unresolved) incidents and scheduled maintenance — so our one-liner can
-// match what the status website actually shows, not just the headline.
-const STATUS_URL = "https://status.claude.com/api/v2/summary.json";
-
-// statuspage component → overall indicator severity.
-const COMPONENT_INDICATOR: Record<string, StatusInfo["indicator"]> = {
-  degraded_performance: "minor",
-  partial_outage: "major",
-  major_outage: "critical",
-  under_maintenance: "maintenance",
-};
-
-const DEFAULT_UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
-
-// Cloudflare ties the cf_clearance cookie to the IP + the exact User-Agent that
-// solved the challenge, so we forward the caller's real UA (from the browser)
-// rather than a hardcoded one — otherwise Cloudflare re-challenges with a 403.
-// The cookie is forwarded verbatim and never stored on our side.
-function claudeHeaders(cookie: string, userAgent: string): HeadersInit {
-  return {
-    Cookie: cookie,
-    Accept: "application/json",
-    "Accept-Language": "en-US,en;q=0.9",
-    "User-Agent": userAgent || DEFAULT_UA,
-    Referer: `${CLAUDE}/settings/usage`,
-  };
-}
-
-// claude.ai (and its Cloudflare edge) occasionally stalls. Cap each upstream
-// request so a hung connection surfaces as a clean error instead of leaving
-// the proxy — and the client waiting on it — hanging until the platform gives up.
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit,
-  ms = 15_000,
-): Promise<Response> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), ms);
-  try {
-    return await fetch(url, { ...init, signal: ctrl.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-}
 
 function parseOrgs(orgs: unknown): OrgInfo[] {
   if (!Array.isArray(orgs)) return [];
@@ -125,52 +73,38 @@ export async function POST(req: Request): Promise<Response> {
   } catch {
     return json({ error: "Invalid request body." }, 400);
   }
-  if (!cookie) return json({ error: "Paste your claude.ai cookie first." }, 400);
-
-  const headers = claudeHeaders(cookie, userAgent);
+  // The Chromium bridge carries the session itself, so a cookie is only needed
+  // when we're falling back to a direct fetch (the plain-browser build).
+  const transport = await claudeTransport(cookie, userAgent);
+  if (transport.kind === "cookie" && !cookie) {
+    return json({ error: "Paste your claude.ai cookie first." }, 400);
+  }
 
   // 1) List organizations.
-  let orgRes: Response;
+  let orgRes: { status: number; json: unknown };
   try {
-    orgRes = await fetchWithTimeout(`${CLAUDE}/api/organizations`, { headers, cache: "no-store" });
+    orgRes = await transport.get("/api/organizations");
   } catch {
     return json({ error: "Couldn't reach claude.ai. Check your connection." }, 502);
   }
-  if (!orgRes.ok) {
-    const snippet = (await orgRes.text().catch(() => "")).slice(0, 300);
-    console.error("[usage] /api/organizations failed", orgRes.status, snippet.slice(0, 120));
-    if (orgRes.status === 401) {
-      return json(
-        { error: "Cookie expired or invalid — paste a fresh one.", auth: true },
-        401,
-      );
-    }
-    if (orgRes.status === 403) {
-      return json(
-        {
-          error:
-            "claude.ai blocked the request (403, Cloudflare). Re-copy the entire Cookie header — it must include cf_clearance — from the same browser.",
-          auth: true,
-        },
-        403,
-      );
-    }
-    return json({ error: `claude.ai returned ${orgRes.status} fetching organizations.` }, 502);
+  if (orgRes.status !== 200) {
+    console.error("[usage] /api/organizations failed", orgRes.status, transport.kind);
+    return json(authError(orgRes.status, transport), authStatus(orgRes.status));
   }
 
-  const orgs = parseOrgs(await orgRes.json().catch(() => null));
+  const orgs = parseOrgs(orgRes.json);
   if (orgs.length === 0) {
     return json({ error: "No organization found for this account." }, 502);
   }
 
   // 2) Fetch usage for every org (so we can auto-pick the active one) + status.
   const [usages, statusInfo] = await Promise.all([
-    Promise.all(orgs.map((o) => fetchUsage(o.uuid, headers))),
-    fetchStatus(),
+    Promise.all(orgs.map((o) => fetchUsage(o.uuid, transport))),
+    fetchStatus(CLAUDE_STATUS_URL),
   ]);
 
   if (usages.every((u) => u.status === 401 || u.status === 403)) {
-    return json({ error: "Cookie expired or invalid — paste a fresh one.", auth: true }, 401);
+    return json(authError(401, transport), 401);
   }
 
   const summaries: OrgSummary[] = orgs.map((o, i) => ({
@@ -194,67 +128,54 @@ export async function POST(req: Request): Promise<Response> {
     usage: usages[idx].usage,
     orgs: summaries,
     status: statusInfo,
+    via: transport.kind,
     fetchedAt: new Date().toISOString(),
   };
   return json(payload);
 }
 
-async function fetchUsage(
-  uuid: string,
-  headers: HeadersInit,
-): Promise<{ status: number; usage: RawUsage }> {
-  try {
-    const res = await fetchWithTimeout(`${CLAUDE}/api/organizations/${uuid}/usage`, {
-      headers,
-      cache: "no-store",
-    });
-    if (!res.ok) return { status: res.status, usage: {} };
-    return { status: 200, usage: (await res.json().catch(() => ({}))) as RawUsage };
-  } catch {
-    return { status: 0, usage: {} };
+const authStatus = (upstream: number): number =>
+  upstream === 401 || upstream === 403 ? upstream : 502;
+
+/**
+ * Message the user can act on. The two transports fail for unrelated reasons, so
+ * they need different advice: the bridge means the in-app session is dead (sign
+ * in again), while a direct fetch that 403s is almost always Cloudflare refusing
+ * Node's fingerprint — no cookie fixes that, so say so instead of sending the
+ * user back to DevTools for a cookie that can't work.
+ */
+function authError(
+  upstream: number,
+  transport: ClaudeTransport,
+): { error: string; auth?: boolean } {
+  if (transport.kind === "bridge") {
+    return {
+      error: "Your Claude session expired. Click “Sign in to Claude” to reconnect.",
+      auth: true,
+    };
   }
+  if (upstream === 403) {
+    return {
+      error:
+        "Cloudflare blocked the request (403). It rejects requests from outside a browser regardless of cookie, so use the menu-bar app — it signs in and reads your usage through Chromium.",
+      auth: true,
+    };
+  }
+  if (upstream === 401) {
+    return { error: "Cookie expired or invalid — paste a fresh one.", auth: true };
+  }
+  return { error: `claude.ai returned ${upstream} fetching organizations.` };
 }
 
-type StatusComponent = { name: string; status: string; group?: boolean };
-type StatusIncident = { name: string; impact?: string };
-type SummaryJson = {
-  status?: StatusInfo;
-  components?: StatusComponent[];
-  incidents?: StatusIncident[];
-};
-
-async function fetchStatus(): Promise<StatusInfo | null> {
+async function fetchUsage(
+  uuid: string,
+  transport: ClaudeTransport,
+): Promise<{ status: number; usage: RawUsage }> {
   try {
-    const res = await fetchWithTimeout(STATUS_URL, { cache: "no-store" });
-    if (!res.ok) return null;
-    const data = (await res.json()) as SummaryJson;
-    const rollup = data.status ?? null;
-
-    // An unresolved incident is the most important thing to surface — and its
-    // own `impact` (none/minor/major/critical/maintenance) is the real color,
-    // not the page rollup (which can still read "none" during a minor incident).
-    const incident = data.incidents?.[0];
-    if (incident?.name) {
-      const impact = incident.impact;
-      const indicator = impact && impact !== "none" ? impact : "minor";
-      return { indicator, description: incident.name };
-    }
-
-    // Otherwise reflect the single most-degraded component, if any.
-    const degraded = (data.components ?? [])
-      .filter((c) => !c.group && c.status && c.status !== "operational")
-      .map((c) => ({ c, sev: COMPONENT_INDICATOR[c.status] ?? "minor" }));
-    if (degraded.length > 0) {
-      const order = ["minor", "maintenance", "major", "critical"];
-      const worst = degraded.reduce((a, b) =>
-        order.indexOf(b.sev) > order.indexOf(a.sev) ? b : a,
-      );
-      const label = worst.c.status.replace(/_/g, " ");
-      return { indicator: worst.sev, description: `${worst.c.name}: ${label}` };
-    }
-
-    return rollup;
+    const res = await transport.get(`/api/organizations/${uuid}/usage`);
+    if (res.status !== 200) return { status: res.status, usage: {} };
+    return { status: 200, usage: (res.json ?? {}) as RawUsage };
   } catch {
-    return null;
+    return { status: 0, usage: {} };
   }
 }
