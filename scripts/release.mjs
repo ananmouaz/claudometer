@@ -29,7 +29,9 @@ for (const f of [armDmg, x64Dmg]) {
   }
 }
 
-const notes = `Claudometer ${version} — your Claude usage limits in the macOS menu bar, shown exactly the way claude.ai shows them, with live service status.
+const notes = `Claudometer ${version} — your **Claude and ChatGPT** usage limits in the macOS menu bar, each shown exactly the way its own settings screen shows them, with live service status for both.
+
+The menu bar reads \`C 4%  G 100%\` — both accounts at a glance, each number coloured on its own (green → amber → red as you approach the cap).
 
 ### Download
 - **Apple Silicon** (M-series Macs): \`Claudometer-${version}-arm64.dmg\`
@@ -37,7 +39,8 @@ const notes = `Claudometer ${version} — your Claude usage limits in the macOS 
 
 ### Install
 1. Download the DMG for your Mac, open it, and drag **Claudometer** to **Applications**.
-2. It lives in your menu bar (no dock icon). Click the icon and follow the one-time setup to paste your claude.ai cookie — the app guides you with live ✓/✗ checks.
+2. It lives in your menu bar (no dock icon). Click it, then **Sign in to Claude** — you log in to claude.ai once inside the app and that's it. Nothing to copy or paste.
+3. The **ChatGPT** tab needs no setup at all if you use the [Codex CLI](https://github.com/openai/codex) — it reuses the login Codex already keeps on your machine. Otherwise you can paste an access token.
 
 ### First launch (unsigned build)
 This build isn't code-signed, so macOS blocks the first launch (*"Apple could not verify…"*). Open it one of two ways:
@@ -46,9 +49,12 @@ This build isn't code-signed, so macOS blocks the first launch (*"Apple could no
 
 *(On macOS 14 and earlier you could right-click → Open; that no longer works on macOS 15+.)*
 
+### What ChatGPT's usage number covers
+OpenAI shares that quota across Codex, Work, Workspace Agents and ChatGPT for Excel. It does **not** include plain Chat conversations — OpenAI publishes no usage figures for those, so no app can show them.
+
 ### Notes
 - Not sure which Mac you have? Apple menu → About This Mac. "Apple M…" = Apple Silicon; "Intel" = Intel.
-- Your session cookie stays on your machine and is sent only to claude.ai. No backend, no telemetry.
+- Your logins stay on your machine. Your Claude session lives in the app's own cookie jar and is used only to read your usage from claude.ai; the ChatGPT token is read from the Codex CLI's local file and sent only to chatgpt.com. No backend, no accounts, no telemetry.
 `;
 
 const notesFile = "release/RELEASE_NOTES.md";
