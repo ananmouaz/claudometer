@@ -88,13 +88,27 @@ export type OpenAIReachedType = {
 
 /**
  * "Usage limit resets" — one-off resets the account can spend to un-cap itself
- * early. The same counts also come back from
- * GET /backend-api/wham/rate-limit-reset-credits, so we don't call it: the
- * inline block is enough for the read-only view.
+ * early. Inline in the usage response, but **counts only**.
  */
 export type OpenAIResetCredits = {
   available_count?: number;
   applicable_available_count?: number;
+};
+
+/**
+ * One reset credit, from GET /backend-api/wham/rate-limit-reset-credits.
+ *
+ * That endpoint is worth the extra call: unlike the inline counts it says when
+ * each credit **expires**, and they do expire — 30 days after they're granted.
+ * The response also carries `id`, `profile_user_id` and `profile_image_url`;
+ * the route strips those, same privacy line as everywhere else.
+ */
+export type OpenAIResetCredit = {
+  status?: string; // "available" once granted and unspent
+  title?: string; // "Full reset"
+  description?: string;
+  expires_at?: string; // ISO-8601
+  is_supported_by_plan?: boolean;
 };
 
 export type RawOpenAIUsage = {
@@ -120,6 +134,12 @@ export type OpenAIPayload = {
   /** Human plan label ("Team", "Plus", …); null when unrecognised. */
   plan: string | null;
   usage: RawOpenAIUsage;
+  /**
+   * Individual reset credits with their expiry dates, or null when that call
+   * failed — it's a second request, and a read-only nicety, so it must never
+   * take the whole panel down. The inline counts still render either way.
+   */
+  resetCredits: OpenAIResetCredit[] | null;
   status: StatusInfo | null;
   fetchedAt: string; // ISO-8601
 };

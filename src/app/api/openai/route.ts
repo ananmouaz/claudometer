@@ -4,13 +4,19 @@ import { join } from "node:path";
 
 import { fetchWithTimeout, json } from "@/lib/http";
 import { OPENAI_STATUS_URL, fetchStatus } from "@/lib/status";
-import type { OpenAIPayload, RawOpenAIUsage } from "@/lib/openai-types";
+import type {
+  OpenAIPayload,
+  OpenAIResetCredit,
+  RawOpenAIUsage,
+} from "@/lib/openai-types";
 import { planLabel } from "@/lib/openai-usage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
+const RESET_CREDITS_URL =
+  "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits";
 
 /**
  * Unlike claude.ai, this endpoint is **not** behind Cloudflare — a bearer token
@@ -75,8 +81,9 @@ export async function POST(req: Request): Promise<Response> {
   // resolve to the wrong account. Omitted when we don't know the id.
   if (accountId) headers["chatgpt-account-id"] = accountId;
 
-  const [usageRes, status] = await Promise.all([
+  const [usageRes, resetCredits, status] = await Promise.all([
     fetchUsage(headers),
+    fetchResetCredits(headers),
     fetchStatus(OPENAI_STATUS_URL),
   ]);
 
@@ -87,6 +94,7 @@ export async function POST(req: Request): Promise<Response> {
   const payload: OpenAIPayload = {
     plan: planLabel(usageRes.usage.plan_type),
     usage: usageRes.usage,
+    resetCredits,
     status,
     fetchedAt: new Date().toISOString(),
   };
@@ -115,6 +123,42 @@ function pick(raw: Record<string, unknown>): RawOpenAIUsage {
   const out: Record<string, unknown> = {};
   for (const k of keys) if (k in raw) out[k] = raw[k];
   return out as RawOpenAIUsage;
+}
+
+/** Only the keys the UI renders — the credit `id` and the grant's profile stay here. */
+function pickCredit(raw: Record<string, unknown>): OpenAIResetCredit {
+  const keys = [
+    "status",
+    "title",
+    "description",
+    "expires_at",
+    "is_supported_by_plan",
+  ] as const;
+  const out: Record<string, unknown> = {};
+  for (const k of keys) if (k in raw) out[k] = raw[k];
+  return out as OpenAIResetCredit;
+}
+
+/**
+ * The per-credit list, which is the only place OpenAI says when a reset
+ * **expires** — the inline `rate_limit_reset_credits` block is counts only.
+ * Best-effort on purpose: a failure here returns null and the panel falls back
+ * to those counts rather than showing an error for a secondary detail.
+ */
+async function fetchResetCredits(
+  headers: Record<string, string>,
+): Promise<OpenAIResetCredit[] | null> {
+  try {
+    const res = await fetchWithTimeout(RESET_CREDITS_URL, { headers, cache: "no-store" });
+    if (!res.ok) return null;
+    const raw = (await res.json()) as { credits?: unknown };
+    if (!Array.isArray(raw?.credits)) return null;
+    return raw.credits
+      .filter((c): c is Record<string, unknown> => !!c && typeof c === "object")
+      .map(pickCredit);
+  } catch {
+    return null;
+  }
 }
 
 async function fetchUsage(headers: Record<string, string>): Promise<UsageResult> {

@@ -46,6 +46,18 @@ export function formatUnixReset(unixSeconds: number | null): string {
   return `Resets ${date} ${timeOnly(d)}`;
 }
 
+/** "Sep 21, 2026" — for dates far enough out that a time of day is noise. */
+export function formatIsoDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 /** "less than a minute ago" / "3 min ago" / "2 hr ago". */
 export function formatRelative(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();

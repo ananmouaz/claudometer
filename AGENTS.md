@@ -164,14 +164,24 @@ npm run release  # build both arches + create/update the v<version> GitHub relea
   drops entries it can't name. `spend_control` amounts are decimal *strings* with
   no currency field anywhere — unit genuinely unknown, and chatgpt.com doesn't
   render it either, so neither do we. Don't guess dollars.
-- `rate_limit_reset_credits` comes inline, so we never call
-  `/backend-api/wham/rate-limit-reset-credits` — it returns the same counts. It
-  holds **two** counts and they are not interchangeable: `available_count` is the
-  balance chatgpt.com displays, `applicable_available_count` is how many can be
-  spent *right now* — 0 whenever no limit is currently reached, which is almost
-  always. Reading the applicable one first made the section read "No usage limit
-  resets available" on an account holding three. `resetCredits()` returns both;
-  don't collapse them.
+- **Reset credits come from two places, and both are needed.** The inline
+  `rate_limit_reset_credits` block holds **two** counts that are not
+  interchangeable: `available_count` is the balance chatgpt.com displays,
+  `applicable_available_count` is how many can be spent *right now* — 0 whenever
+  no limit is currently reached, which is almost always. Reading the applicable
+  one first made the section read "No usage limit resets available" on an account
+  holding three. `resetCredits()` returns both; don't collapse them.
+  - An earlier note here claimed `/backend-api/wham/rate-limit-reset-credits`
+    "returns the same counts". **It doesn't.** It returns one entry per credit
+    with `status`, `title`, `description` and — the reason we call it —
+    `expires_at`. Credits expire 30 days after they're granted, and the inline
+    block never says so. `fetchResetCredits()` is best-effort: a failure returns
+    null and the panel falls back to the counts alone. The response also carries
+    a credit `id` and the granting `profile_user_id` / `profile_image_url`;
+    `pickCredit()` drops all three.
+  - **Read-only stands.** Those entries have `redeem_started_at` / `redeemed_at`,
+    so a redeem endpoint almost certainly exists. We don't call it and we don't
+    render a button: Claudometer never POSTs to an account.
 - **Statuspage reader is shared**: `src/lib/status.ts`, parameterised by URL.
   Anthropic and OpenAI publish the identical schema. Same rule as before — color
   from incident `impact` / worst component, never the page rollup.

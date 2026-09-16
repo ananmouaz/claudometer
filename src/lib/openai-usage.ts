@@ -1,5 +1,6 @@
 import type {
   OpenAIExtraLimit,
+  OpenAIResetCredit,
   OpenAIWindow,
   RawOpenAIUsage,
 } from "./openai-types";
@@ -160,6 +161,48 @@ export function resetCredits(usage: RawOpenAIUsage): {
     owned: n(c?.available_count ?? c?.applicable_available_count),
     applicableNow: n(c?.applicable_available_count),
   };
+}
+
+export type ResetCreditRow = {
+  key: string;
+  title: string; // "Full reset"
+  expiresAt: string | null; // ISO-8601
+  /** Within a week of expiring — worth calling out, they're use-it-or-lose-it. */
+  expiringSoon: boolean;
+};
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * The unspent credits, soonest to expire first.
+ *
+ * Only `status === "available"` entries: the list also carries spent and expired
+ * ones, and showing those as available would overstate what the account has.
+ * Entries with no expiry sort last rather than being dropped — an undated credit
+ * is still a credit.
+ */
+export function resetCreditRows(
+  list: OpenAIResetCredit[] | null | undefined,
+): ResetCreditRow[] {
+  if (!Array.isArray(list)) return [];
+  const now = Date.now();
+  return list
+    .filter((c) => (c.status ?? "available") === "available")
+    .map((c, i) => {
+      const t = c.expires_at ? Date.parse(c.expires_at) : NaN;
+      const expiresAt = Number.isNaN(t) ? null : (c.expires_at as string);
+      return {
+        key: `reset-${i}`,
+        title: c.title?.trim() || "Usage limit reset",
+        expiresAt,
+        expiringSoon: expiresAt !== null && t - now < WEEK_MS,
+      };
+    })
+    .sort((a, b) => {
+      const at = a.expiresAt ? Date.parse(a.expiresAt) : Infinity;
+      const bt = b.expiresAt ? Date.parse(b.expiresAt) : Infinity;
+      return at - bt;
+    });
 }
 
 /**

@@ -7,10 +7,17 @@ import {
   headlineUsedPercent,
   reachedBanner,
   resetCredits,
+  resetCreditRows,
   usageRows,
   type OpenAIRow,
+  type ResetCreditRow,
 } from "@/lib/openai-usage";
-import { clampPct, formatRelative, formatUnixReset } from "@/lib/format";
+import {
+  clampPct,
+  formatIsoDate,
+  formatRelative,
+  formatUnixReset,
+} from "@/lib/format";
 import { reportUsage } from "./tray-usage";
 
 const TOKEN_KEY = "openai_usage_token";
@@ -126,6 +133,9 @@ export function ChatGptPanel() {
   const banner = data ? reachedBanner(data.usage) : null;
   const rows = data ? usageRows(data.usage) : [];
   const resets = data ? resetCredits(data.usage) : null;
+  // Per-credit detail is a second, best-effort call — empty just means we fall
+  // back to the count line above it.
+  const resetList = data ? resetCreditRows(data.resetCredits) : [];
 
   // Card frame and brand bar live in the tab shell (see shell.tsx).
   return (
@@ -191,8 +201,15 @@ export function ChatGptPanel() {
                   be spent once a limit is actually reached. */}
               {resets && resets.owned > 0 && resets.applicableNow === 0 && (
                 <p className="mt-1 text-sm text-faint">
-                  You can use one once you reach a usage limit.
+                  You can use one on chatgpt.com once you reach a usage limit.
                 </p>
+              )}
+              {resetList.length > 0 && (
+                <ul className="mt-3 flex flex-col gap-1.5">
+                  {resetList.map((r) => (
+                    <ResetCreditLine key={r.key} row={r} />
+                  ))}
+                </ul>
               )}
             </div>
 
@@ -267,6 +284,28 @@ function RemainingRow({ row }: { row: OpenAIRow }) {
       </div>
       {reset && <div className="mt-1.5 text-sm text-muted">{reset}</div>}
     </div>
+  );
+}
+
+/**
+ * One reset credit and its expiry. They're use-it-or-lose-it — 30 days from the
+ * grant — and the inline counts never say so, which is the whole reason for the
+ * second API call. The last week before expiry is tinted like a warning.
+ */
+function ResetCreditLine({ row }: { row: ResetCreditRow }) {
+  const on = formatIsoDate(row.expiresAt);
+  return (
+    <li className="flex items-baseline justify-between gap-3 text-sm">
+      <span className="text-ink">{row.title}</span>
+      {on && (
+        <span
+          className="shrink-0 text-right"
+          style={{ color: row.expiringSoon ? "var(--warn)" : "var(--muted)" }}
+        >
+          Expires {on}
+        </span>
+      )}
+    </li>
   );
 }
 
