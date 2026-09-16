@@ -4,9 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { OpenAIPayload } from "@/lib/openai-types";
 import type { StatusInfo } from "@/lib/types";
 import {
-  peakUsedPercent,
+  headlineUsedPercent,
   reachedBanner,
-  resetCreditCount,
+  resetCredits,
   usageRows,
   type OpenAIRow,
 } from "@/lib/openai-usage";
@@ -64,7 +64,7 @@ export function ChatGptPanel() {
           const payload = body as OpenAIPayload;
           setData(payload);
           setError(null);
-          reportUsage("openai", clampPct(peakUsedPercent(payload.usage)));
+          reportUsage("openai", clampPct(headlineUsedPercent(payload.usage)));
           return;
         } catch {
           if (attempt < MAX_TRIES) {
@@ -125,7 +125,7 @@ export function ChatGptPanel() {
 
   const banner = data ? reachedBanner(data.usage) : null;
   const rows = data ? usageRows(data.usage) : [];
-  const resets = data ? resetCreditCount(data.usage) : 0;
+  const resets = data ? resetCredits(data.usage) : null;
 
   // Card frame and brand bar live in the tab shell (see shell.tsx).
   return (
@@ -183,10 +183,17 @@ export function ChatGptPanel() {
             <div className="border-t border-edge pt-4">
               <h2 className="text-base font-semibold text-ink">Usage limit resets</h2>
               <p className="mt-2 text-sm text-muted">
-                {resets > 0
-                  ? `${resets} usage limit reset${resets === 1 ? "" : "s"} available.`
+                {resets && resets.owned > 0
+                  ? `${resets.owned} usage limit reset${resets.owned === 1 ? "" : "s"} available.`
                   : "No usage limit resets available at this time."}
               </p>
+              {/* Owned but not applicable is the normal state: a reset can only
+                  be spent once a limit is actually reached. */}
+              {resets && resets.owned > 0 && resets.applicableNow === 0 && (
+                <p className="mt-1 text-sm text-faint">
+                  You can use one once you reach a usage limit.
+                </p>
+              )}
             </div>
 
             <div className="flex items-center gap-2 text-sm text-muted">

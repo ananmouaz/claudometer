@@ -120,9 +120,17 @@ npm run release  # build both arches + create/update the v<version> GitHub relea
     could be ChatGPT's. **Don't reintroduce a single shared number.**
   - Providers appear only once they've reported, in a fixed order, so a
     disconnected account leaves a gap rather than showing a fake 0%.
-  - Claude reports its **session** %, ChatGPT its **worst** window. Asymmetric on
-    purpose — session is the number people watch on Claude — but if you unify
-    them, unify both labels too.
+  - Both report their **shortest** window: Claude's session %, ChatGPT's 5-hour
+    window when the plan has one (`headlineUsedPercent()`), falling back to the
+    weekly window on plans that publish only that. It used to be ChatGPT's
+    *worst* window, which silently switched between the 5-hour and the weekly
+    number with nothing in the menu bar to say which you were reading.
+  - **One escalation**, and it's deliberate: once a longer window reaches 85%,
+    it takes over the readout. That's the same 85 that tints the number red, so
+    the swap always coincides with a visible color change — never a silent one.
+    A green 5-hour 8% while the weekly sits at 97% was the one case where the
+    stable choice actively misled. Keep the threshold and `dangerColor()` in
+    step if either moves.
 
 ## ChatGPT side — different rules, don't copy the Claude assumptions
 
@@ -157,7 +165,13 @@ npm run release  # build both arches + create/update the v<version> GitHub relea
   no currency field anywhere — unit genuinely unknown, and chatgpt.com doesn't
   render it either, so neither do we. Don't guess dollars.
 - `rate_limit_reset_credits` comes inline, so we never call
-  `/backend-api/wham/rate-limit-reset-credits` — it returns the same counts.
+  `/backend-api/wham/rate-limit-reset-credits` — it returns the same counts. It
+  holds **two** counts and they are not interchangeable: `available_count` is the
+  balance chatgpt.com displays, `applicable_available_count` is how many can be
+  spent *right now* — 0 whenever no limit is currently reached, which is almost
+  always. Reading the applicable one first made the section read "No usage limit
+  resets available" on an account holding three. `resetCredits()` returns both;
+  don't collapse them.
 - **Statuspage reader is shared**: `src/lib/status.ts`, parameterised by URL.
   Anthropic and OpenAI publish the identical schema. Same rule as before — color
   from incident `impact` / worst component, never the page rollup.
